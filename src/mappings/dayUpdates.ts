@@ -119,25 +119,22 @@ export function updateTokenDayData(
     .concat('-')
     .concat(BigInt.fromI32(dayID).toString());
 
-  // note: added for the assemblyscript migration. has code smell/likely bugs in original impl
-  let tokenEthPrice = token.derivedETH ? token.derivedETH! : BigDecimal.zero();
-
   let tokenDayData = TokenDayData.load(tokenDayID);
   if (tokenDayData === null) {
     tokenDayData = new TokenDayData(tokenDayID);
     tokenDayData.date = dayStartTimestamp;
     tokenDayData.token = token.id;
-    tokenDayData.priceUSD = tokenEthPrice.times(bundle.ethPrice);
+    tokenDayData.priceUSD = token.derivedETH.times(bundle.ethPrice);
     tokenDayData.dailyVolumeToken = ZERO_BD;
     tokenDayData.dailyVolumeETH = ZERO_BD;
     tokenDayData.dailyVolumeUSD = ZERO_BD;
     tokenDayData.dailyTxns = ZERO_BI;
     tokenDayData.totalLiquidityUSD = ZERO_BD;
   }
-  tokenDayData.priceUSD = tokenEthPrice.times(bundle.ethPrice);
+  tokenDayData.priceUSD = token.derivedETH.times(bundle.ethPrice);
   tokenDayData.totalLiquidityToken = token.totalLiquidity;
   tokenDayData.totalLiquidityETH = token.totalLiquidity.times(
-    tokenEthPrice as BigDecimal
+    token.derivedETH as BigDecimal
   );
   tokenDayData.totalLiquidityUSD = tokenDayData.totalLiquidityETH.times(
     bundle.ethPrice

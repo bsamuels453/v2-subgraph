@@ -14,8 +14,6 @@ import {
   User,
   Bundle,
   Token,
-  LiquidityPosition,
-  LiquidityPositionSnapshot,
   Pair,
   UniswapFactory,
   Transaction,
@@ -104,6 +102,7 @@ export function bigDecimalExp18(): BigDecimal {
 }
 
 export function convertEthToDecimal(eth: BigInt): BigDecimal {
+  // @ts-ignore
   return eth.toBigDecimal().div(exponentToBigDecimal(18));
 }
 
@@ -207,33 +206,14 @@ export function fetchTokenDecimals(tokenAddress: Address): BigInt {
 
   let contract = ERC20.bind(tokenAddress);
   // try types uint8 for decimals
+  // @ts-ignore
   let decimalValue: i32;
   let decimalResult = contract.try_decimals();
   if (!decimalResult.reverted) {
     decimalValue = decimalResult.value;
   }
+  // @ts-ignore
   return BigInt.fromI32(decimalValue as i32);
-}
-
-export function createLiquidityPosition(
-  exchange: Address,
-  user: Address
-): LiquidityPosition {
-  let id = exchange.toHexString().concat('-').concat(user.toHexString());
-  let liquidityTokenBalance = LiquidityPosition.load(id);
-  if (liquidityTokenBalance === null) {
-    let pair = loadPairOrFail(exchange.toHexString());
-    pair.liquidityProviderCount = pair.liquidityProviderCount.plus(ONE_BI);
-    liquidityTokenBalance = new LiquidityPosition(id);
-    liquidityTokenBalance.liquidityTokenBalance = ZERO_BD;
-    liquidityTokenBalance.pair = exchange.toHexString();
-    liquidityTokenBalance.user = user.toHexString();
-    liquidityTokenBalance.save();
-    pair.save();
-  }
-  if (liquidityTokenBalance === null)
-    log.error('LiquidityTokenBalance is null', [id]);
-  return liquidityTokenBalance as LiquidityPosition;
 }
 
 export function createUser(address: Address): void {
@@ -243,43 +223,4 @@ export function createUser(address: Address): void {
     user.usdSwapped = ZERO_BD;
     user.save();
   }
-}
-
-export function createLiquiditySnapshot(
-  position: LiquidityPosition,
-  event: ethereum.Event
-): void {
-  let timestamp = event.block.timestamp.toI32();
-  let bundle = loadBundleOrFail('1');
-  let pair = loadPairOrFail(position.pair);
-  let token0 = loadTokenOrFail(pair.token0);
-  let token1 = loadTokenOrFail(pair.token1);
-
-  // note: added for the assemblyscript migration. has code smell/likely bugs in original impl
-  let token0EthPrice = token0.derivedETH
-    ? token0.derivedETH!
-    : BigDecimal.zero();
-  let token1EthPrice = token1.derivedETH
-    ? token1.derivedETH!
-    : BigDecimal.zero();
-
-  // create new snapshot
-  let snapshot = new LiquidityPositionSnapshot(
-    position.id.concat(timestamp.toString())
-  );
-  snapshot.liquidityPosition = position.id;
-  snapshot.timestamp = timestamp;
-  snapshot.block = event.block.number.toI32();
-  snapshot.user = position.user;
-  snapshot.pair = position.pair;
-  snapshot.token0PriceUSD = token0EthPrice.times(bundle.ethPrice);
-  snapshot.token1PriceUSD = token1EthPrice.times(bundle.ethPrice);
-  snapshot.reserve0 = pair.reserve0;
-  snapshot.reserve1 = pair.reserve1;
-  snapshot.reserveUSD = pair.reserveUSD;
-  snapshot.liquidityTokenTotalSupply = pair.totalSupply;
-  snapshot.liquidityTokenBalance = position.liquidityTokenBalance;
-  snapshot.liquidityPosition = position.id;
-  snapshot.save();
-  position.save();
 }
