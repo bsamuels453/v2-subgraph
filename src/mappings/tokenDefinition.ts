@@ -1,26 +1,28 @@
-import {
-  Address,
-  BigInt,
-} from "@graphprotocol/graph-ts"
+import { Address, BigInt } from '@graphprotocol/graph-ts';
 
 // Initialize a Token Definition with the attributes
 export class TokenDefinition {
-  address : Address
-  symbol: string
-  name: string
-  decimals: BigInt
+  address: Address;
+  symbol: string;
+  name: string;
+  decimals: BigInt;
 
   // Initialize a Token Definition with its attributes
-  constructor(address: Address, symbol: string, name: string, decimals: BigInt) {
-    this.address = address
-    this.symbol = symbol
-    this.name = name
-    this.decimals = decimals
+  constructor(
+    address: Address,
+    symbol: string,
+    name: string,
+    decimals: BigInt
+  ) {
+    this.address = address;
+    this.symbol = symbol;
+    this.name = name;
+    this.decimals = decimals;
   }
 
   // Get all tokens with a static defintion
   static getStaticDefinitions(): Array<TokenDefinition> {
-    let staticDefinitions = new Array<TokenDefinition>(6)
+    let staticDefinitions = new Array<TokenDefinition>();
 
     // Add DGD
     let tokenDGD = new TokenDefinition(
@@ -28,8 +30,8 @@ export class TokenDefinition {
       'DGD',
       'DGD',
       BigInt.fromI32(9)
-    )
-    staticDefinitions.push(tokenDGD)
+    );
+    staticDefinitions.push(tokenDGD);
 
     // Add AAVE
     let tokenAAVE = new TokenDefinition(
@@ -37,8 +39,8 @@ export class TokenDefinition {
       'AAVE',
       'Aave Token',
       BigInt.fromI32(18)
-    )
-    staticDefinitions.push(tokenAAVE)
+    );
+    staticDefinitions.push(tokenAAVE);
 
     // Add LIF
     let tokenLIF = new TokenDefinition(
@@ -46,8 +48,8 @@ export class TokenDefinition {
       'LIF',
       'Lif',
       BigInt.fromI32(18)
-    )
-    staticDefinitions.push(tokenLIF)
+    );
+    staticDefinitions.push(tokenLIF);
 
     // Add SVD
     let tokenSVD = new TokenDefinition(
@@ -55,8 +57,8 @@ export class TokenDefinition {
       'SVD',
       'savedroid',
       BigInt.fromI32(18)
-    )
-    staticDefinitions.push(tokenSVD)
+    );
+    staticDefinitions.push(tokenSVD);
 
     // Add TheDAO
     let tokenTheDAO = new TokenDefinition(
@@ -64,8 +66,8 @@ export class TokenDefinition {
       'TheDAO',
       'TheDAO',
       BigInt.fromI32(16)
-    )
-    staticDefinitions.push(tokenTheDAO)
+    );
+    staticDefinitions.push(tokenTheDAO);
 
     // Add HPB
     let tokenHPB = new TokenDefinition(
@@ -73,27 +75,26 @@ export class TokenDefinition {
       'HPB',
       'HPBCoin',
       BigInt.fromI32(18)
-    )
-    staticDefinitions.push(tokenHPB)
+    );
+    staticDefinitions.push(tokenHPB);
 
-    return staticDefinitions
+    return staticDefinitions;
   }
 
   // Helper for hardcoded tokens
-  static fromAddress(tokenAddress: Address) : TokenDefinition | null {
-    let staticDefinitions = this.getStaticDefinitions()
-    let tokenAddressHex = tokenAddress.toHexString()
+  static fromAddress(tokenAddress: Address): TokenDefinition | null {
+    let staticDefinitions = this.getStaticDefinitions();
+    let tokenAddressHex = tokenAddress.toHexString();
 
     // Search the definition using the address
     for (let i = 0; i < staticDefinitions.length; i++) {
-      let staticDefinition = staticDefinitions[i]
-      if(staticDefinition.address.toHexString() == tokenAddressHex) {
-        return staticDefinition
+      let staticDefinition = staticDefinitions[i];
+      if (staticDefinition.address.toHexString() == tokenAddressHex) {
+        return staticDefinition;
       }
     }
 
     // If not found, return null
-    return null
+    return null;
   }
-
 }
