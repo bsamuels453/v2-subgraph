@@ -22,7 +22,7 @@ type UniswapFactory @entity {
 
 type Token @entity {
   # token address
-  id: ID!
+  id: Bytes!
 
   # mirrored from the smart contract
   symbol: String!
@@ -56,7 +56,7 @@ type Token @entity {
 
 type Pair @entity {
   # pair address
-  id: ID!
+  id: Bytes!
 
   # mirrored from the smart contract
   token0: Token!
@@ -94,17 +94,52 @@ type Pair @entity {
 }
 
 type User @entity {
-  id: ID!
+  id: Bytes!
   usdSwapped: BigDecimal!
+	usdTotalGains: BigDecimal!
+	usdTotalLosses: BigDecimal!
+	usdNet: BigDecimal!
+}
+
+type TokenCostBasis @entity {
+	# userAddr.concat(tokenAddr)
+	id: Bytes!
+
+	user: User!
+	token: Token!
+
+	# the average cost basis of outstandingTokens
+	usdCostBasis: BigDecimal!
+
+	# the number of tokens held by the user that have unrecognized profit/loss
+	outstandingTokens: BigDecimal!
+
+	# the number of tokens the user has sold for which we were able to calculate their cost basis
+	consumedTokens: BigDecimal!
+
+	# the number of tokens this user has sold that we do not know the cost basis for
+	unrecognizableTokens: BigDecimal!
+
+	usdTotalProfit: BigDecimal!
+	usdTotalLoss: BigDecimal!
+	usdTotalNetProceeds: BigDecimal!
+
+	smartContractRuledOut: Boolean
+
+	swaps: [Swap!]! @derivedFrom(field: "costBasis")
 }
 
 type Transaction @entity {
-  id: ID! # txn hash
+  id: Bytes! # txn hash
   blockNumber: BigInt!
   timestamp: BigInt!
   # This is not the reverse of Mint.transaction; it is only used to
   # track incomplete mints (similar for burns and swaps)
   swaps: [Swap!]!
+
+	multiLegSwapInProgress: Boolean!
+
+	multiswapBeneficiary: Bytes
 }
 
 type Mint @entity {
@@ -158,9 +193,9 @@ type Burn @entity {
   feeLiquidity: BigDecimal
 }
 
-type Swap @entity {
+type Swap @entity @entity(immutable: true) {
   # transaction hash + "-" + index in swaps Transaction array
-  id: ID!
+  id: Bytes!
   transaction: Transaction!
   timestamp: BigInt! # need this to pull recent txns for specific token or pair
   pair: Pair!
@@ -172,22 +207,42 @@ type Swap @entity {
   amount1In: BigDecimal!
   amount0Out: BigDecimal!
   amount1Out: BigDecimal!
-  to: Bytes!
+  to: Bytes! # beneficiary of swap
+	txnTarget: Bytes! # the contract handling this execution
   logIndex: BigInt
+
+	# True if this swap is being managed by the uniswap router contract
+	routerSwap: Boolean
+
+	# True if this transaction is likely coming from the uniswap front end
+	#frontendSwap: Boolean
+
+	accounted: Boolean
 
   # derived info
   amountUSD: BigDecimal!
+
+	costBasis: TokenCostBasis
 }
 
 # stores for USD calculations
 type Bundle @entity {
   id: ID!
   ethPrice: BigDecimal! # price of ETH usd
+	#lastUpdated: BigInt! # block at which the value was last updated
+}
+
+# used to cache token -> pair mappings
+type PairLookup @entity(immutable: true) {
+	# token0-token1, where tokenA has a lower hex value.
+	# https://github.com/Uniswap/v2-core/blob/master/contracts/UniswapV2Factory.sol#L25
+	id: Bytes!
+	pair: Pair!
 }
 
 # Data accumulated and condensed into day stats for all of Uniswap
 type UniswapDayData @entity {
-  id: ID! # timestamp rounded to current day by dividing by 86400
+  id: Bytes! # timestamp rounded to current day by dividing by 86400
   date: Int!
 
   dailyVolumeETH: BigDecimal!
@@ -203,7 +258,7 @@ type UniswapDayData @entity {
 }
 
 type PairHourData @entity {
-  id: ID!
+  id: Bytes!
   hourStartUnix: Int! # unix timestamp for start of hour
   pair: Pair!
 
@@ -226,7 +281,7 @@ type PairHourData @entity {
 
 # Data accumulated and condensed into day stats for each exchange
 type PairDayData @entity {
-  id: ID!
+  id: Bytes!
   date: Int!
   pairAddress: Bytes!
   token0: Token!
@@ -250,7 +305,7 @@ type PairDayData @entity {
 }
 
 type TokenDayData @entity {
-  id: ID!
+  id: Bytes!
   date: Int!
   token: Token!
 

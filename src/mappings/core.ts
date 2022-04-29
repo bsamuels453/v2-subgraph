@@ -41,7 +41,7 @@ import {
   ADDRESS_ZERO,
   FACTORY_ADDRESS,
   ONE_BI,
-  createUser,
+  getOrCreateUser,
   ZERO_BD,
   BI_18,
   loadTokenOrFail,
@@ -49,6 +49,10 @@ import {
   loadFactoryOrFail,
   loadBundleOrFail,
   loadTransactionOrFail,
+  isRouter,
+  getSwapCreditor,
+  recognizeTokenSale,
+  recognizeTokenPurchase,
 } from './helpers';
 
 export function handleTransfer(event: Transfer): void {
@@ -60,25 +64,22 @@ export function handleTransfer(event: Transfer): void {
     return;
   }
 
-  let factory = loadFactoryOrFail(FACTORY_ADDRESS);
-  let transactionHash = event.transaction.hash.toHexString();
-
   // user stats
   let from = event.params.from;
-  createUser(from);
+  getOrCreateUser(from);
   let to = event.params.to;
-  createUser(to);
+  getOrCreateUser(to);
 
   // get pair and load contract
-  let pair = loadPairOrFail(event.address.toHexString());
+  let pair = loadPairOrFail(event.address);
 
   // liquidity token amount being transfered
   let value = convertTokenToDecimal(event.params.value, BI_18);
 
   // get or create transaction
-  let transaction = Transaction.load(transactionHash);
+  let transaction = Transaction.load(event.transaction.hash);
   if (transaction === null) {
-    transaction = new Transaction(transactionHash);
+    transaction = new Transaction(event.transaction.hash);
     transaction.blockNumber = event.block.number;
     transaction.timestamp = event.block.timestamp;
     transaction.swaps = [];
@@ -92,7 +93,7 @@ export function handleTransfer(event: Transfer): void {
 
   if (
     event.params.to.toHexString() == ADDRESS_ZERO &&
-    event.params.from.toHexString() == pair.id
+    Bytes.fromHexString(event.params.from.toHexString()) == pair.id
   ) {
     pair.totalSupply = pair.totalSupply.minus(value);
     pair.save();
@@ -102,7 +103,7 @@ export function handleTransfer(event: Transfer): void {
 }
 
 export function handleSync(event: Sync): void {
-  let pair = loadPairOrFail(event.address.toHexString());
+  let pair = loadPairOrFail(event.address);
   let uniswap = loadFactoryOrFail(FACTORY_ADDRESS);
   let token0 = loadTokenOrFail(pair.token0);
   let token1 = loadTokenOrFail(pair.token1);
@@ -132,6 +133,9 @@ export function handleSync(event: Sync): void {
   let bundle = loadBundleOrFail('1');
   bundle.ethPrice = getEthPriceInUSD();
   bundle.save();
+  //if(bundle.lastUpdated.lt(event.block.number)){
+  //	bundle.lastUpdated = event.block.number;
+  //}
 
   token0.derivedETH = findEthPerToken(token0 as Token);
   token1.derivedETH = findEthPerToken(token1 as Token);
@@ -176,7 +180,7 @@ export function handleSync(event: Sync): void {
 }
 
 export function handleSwap(event: Swap): void {
-  let pair = loadPairOrFail(event.address.toHexString());
+  let pair = loadPairOrFail(event.address);
 
   let token0 = loadTokenOrFail(pair.token0);
   let token1 = loadTokenOrFail(pair.token1);
@@ -267,23 +271,17 @@ export function handleSwap(event: Swap): void {
   token1.save();
   uniswap.save();
 
-  let transaction = Transaction.load(event.transaction.hash.toHexString());
+  let transaction = Transaction.load(event.transaction.hash);
   if (transaction === null) {
-    transaction = new Transaction(event.transaction.hash.toHexString());
+    transaction = new Transaction(event.transaction.hash);
     transaction.blockNumber = event.block.number;
     transaction.timestamp = event.block.timestamp;
+    transaction.multiLegSwapInProgress = false;
     transaction.swaps = [];
+    transaction.multiswapBeneficiary = null;
   }
   let swaps = transaction.swaps;
-  if (swaps === null) {
-    swaps = [];
-  }
-  let swap = new SwapEvent(
-    event.transaction.hash
-      .toHexString()
-      .concat('-')
-      .concat(BigInt.fromI32(swaps.length).toString())
-  );
+  let swap = new SwapEvent(event.transaction.hash.concatI32(swaps.length));
 
   // update swap event
   swap.transaction = transaction.id;
@@ -295,12 +293,133 @@ export function handleSwap(event: Swap): void {
   swap.amount1In = amount1In;
   swap.amount0Out = amount0Out;
   swap.amount1Out = amount1Out;
-  swap.to = event.params.to;
+  swap.costBasis = null;
+  //
   swap.from = event.transaction.from;
   swap.logIndex = event.logIndex;
+
+  let txnTo = ADDRESS_ZERO; //contract create
+  if (event.transaction.to) {
+    txnTo = event.transaction.to!.toHexString();
+  }
+
+  swap.txnTarget = Bytes.fromHexString(txnTo);
+
   // use the tracked amount if we have it
   swap.amountUSD =
     trackedAmountUSD === ZERO_BD ? derivedAmountUSD : trackedAmountUSD;
+
+  let swapInitiatedByRouter = false;
+  let sender = swap.sender.toHexString();
+  let toAddress = event.params.to.toHexString();
+  if (isRouter(sender)) {
+    swapInitiatedByRouter = true;
+  }
+  swap.routerSwap = swapInitiatedByRouter;
+
+  if (isRouter(toAddress)) {
+    // This is swapTokensForEth. Router is transfering tokens to itself before unwrapping.
+    // We're going to assume that no smart contract out there will ever want to use swapForEth over swapForTokens
+    toAddress = event.transaction.from.toHexString();
+  }
+
+  let fromAddress = swap.from.toHexString();
+  let nextHopIsPair = false;
+  // check for multi-leg swaps
+  if (
+    toAddress != sender &&
+    sender != fromAddress &&
+    fromAddress != toAddress
+  ) {
+    let toPair = Pair.load(Bytes.fromHexString(toAddress));
+    if (toPair) {
+      nextHopIsPair = true;
+    }
+  }
+
+  if (!transaction.multiLegSwapInProgress) {
+    // calc cost basis of origin txn
+    log.info('Recognizing token sale for tx {} pair {} fromAddress: {}', [
+      transaction.id.toHexString(),
+      pair.id.toHexString(),
+      fromAddress,
+    ]);
+    let debitor = getSwapCreditor(sender, fromAddress, event.transaction);
+    let isEOA = debitor.toHexString() == fromAddress ? true : false;
+
+    // Under some conditions, amount0In AND amount1In will both be non-zero.
+    // probably caused by morons sending their tokens to the pair and forgetting to call swap.
+    // MEV opportunity? lol
+    if (amount0Out == BigDecimal.zero()) {
+      // token0 is the token being sold
+      let cb = recognizeTokenSale(
+        pair.token0,
+        amount0In,
+        swap.amountUSD,
+        debitor,
+        isEOA
+      );
+      if (cb) {
+        swap.costBasis = cb.id;
+      }
+    } else {
+      if (amount1Out == BigDecimal.zero()) {
+        // token1 is the token being solds
+        let cb = recognizeTokenSale(
+          pair.token1,
+          amount1In,
+          swap.amountUSD,
+          debitor,
+          isEOA
+        );
+        if (cb) {
+          swap.costBasis = cb.id;
+        }
+      } else {
+        log.critical('this transaction has 2 populated amountOuts {}', [
+          transaction.id.toHexString(),
+        ]);
+      }
+    }
+  }
+
+  if (nextHopIsPair) {
+    swap.accounted = false;
+    transaction.multiLegSwapInProgress = true;
+    log.info('Starting multiswap txn for tx {}', [
+      transaction.id.toHexString(),
+    ]);
+  } else {
+    swap.accounted = true;
+    transaction.multiLegSwapInProgress = false;
+    //let isEOA = toAddress == fromAddress ? true : false;
+    recognizeTokenPurchase(
+      pair.token0,
+      amount0Out,
+      swap.amountUSD,
+      Bytes.fromHexString(toAddress),
+      false
+    );
+    recognizeTokenPurchase(
+      pair.token1,
+      amount1Out,
+      swap.amountUSD,
+      Bytes.fromHexString(toAddress),
+      false
+    );
+
+    // calc cost basis of purchase
+
+    //if (transaction.multiLegSwapInProgress) {
+    // calc cost basis of origin transaction
+    //} else {
+    // calc cost basis from sent tokens/eth
+    //}
+  }
+
+  // calc cost basis for dest leg of swap (but only if we aren't in an active multiswap)
+
+  swap.to = Address.fromString(toAddress);
   swap.save();
 
   // update the transaction
