@@ -43,12 +43,12 @@ export function handleNewPair(event: PairCreated): void {
   factory.save();
 
   // create the tokens
-  let token0 = Token.load(event.params.token0);
-  let token1 = Token.load(event.params.token1);
+  let token0 = Token.load(event.params.token0.toHexString());
+  let token1 = Token.load(event.params.token1.toHexString());
 
   // fetch info if null
   if (token0 === null) {
-    token0 = new Token(event.params.token0);
+    token0 = new Token(event.params.token0.toHexString());
     token0.symbol = fetchTokenSymbol(event.params.token0);
     token0.name = fetchTokenName(event.params.token0);
     token0.totalSupply = fetchTokenTotalSupply(event.params.token0);
@@ -71,7 +71,7 @@ export function handleNewPair(event: PairCreated): void {
 
   // fetch info if null
   if (token1 === null) {
-    token1 = new Token(event.params.token1);
+    token1 = new Token(event.params.token1.toHexString());
     token1.symbol = fetchTokenSymbol(event.params.token1);
     token1.name = fetchTokenName(event.params.token1);
     token1.totalSupply = fetchTokenTotalSupply(event.params.token1);
@@ -90,8 +90,11 @@ export function handleNewPair(event: PairCreated): void {
     // token1.allPairs = []
     token1.txCount = ZERO_BI;
   }
+  // save updated values
+  token0.save();
+  token1.save();
 
-  let pair = new Pair(event.params.pair) as Pair;
+  let pair = new Pair(event.params.pair.toHexString()) as Pair;
   pair.token0 = token0.id;
   pair.token1 = token1.id;
   pair.liquidityProviderCount = ZERO_BI;
@@ -113,15 +116,13 @@ export function handleNewPair(event: PairCreated): void {
 
   let lookupId = getPairLookupId(token0.id, token1.id);
   let pairLookup = new PairLookup(lookupId);
+
+  pair.save();
   pairLookup.pair = pair.id;
 
   // create the tracked contract based on the template
   PairTemplate.create(event.params.pair);
 
-  // save updated values
-  token0.save();
-  token1.save();
-  pair.save();
   pairLookup.save();
   factory.save();
 }

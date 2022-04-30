@@ -66,20 +66,20 @@ export function handleTransfer(event: Transfer): void {
 
   // user stats
   let from = event.params.from;
-  getOrCreateUser(from);
+  getOrCreateUser(from.toHexString());
   let to = event.params.to;
-  getOrCreateUser(to);
+  getOrCreateUser(to.toHexString());
 
   // get pair and load contract
-  let pair = loadPairOrFail(event.address);
+  let pair = loadPairOrFail(event.address.toHexString());
 
   // liquidity token amount being transfered
   let value = convertTokenToDecimal(event.params.value, BI_18);
 
   // get or create transaction
-  let transaction = Transaction.load(event.transaction.hash);
+  let transaction = Transaction.load(event.transaction.hash.toHexString());
   if (transaction === null) {
-    transaction = new Transaction(event.transaction.hash);
+    transaction = new Transaction(event.transaction.hash.toHexString());
     transaction.blockNumber = event.block.number;
     transaction.timestamp = event.block.timestamp;
     transaction.swaps = [];
@@ -93,7 +93,7 @@ export function handleTransfer(event: Transfer): void {
 
   if (
     event.params.to.toHexString() == ADDRESS_ZERO &&
-    Bytes.fromHexString(event.params.from.toHexString()) == pair.id
+    event.params.from.toHexString() == pair.id
   ) {
     pair.totalSupply = pair.totalSupply.minus(value);
     pair.save();
@@ -103,7 +103,7 @@ export function handleTransfer(event: Transfer): void {
 }
 
 export function handleSync(event: Sync): void {
-  let pair = loadPairOrFail(event.address);
+  let pair = loadPairOrFail(event.address.toHexString());
   let uniswap = loadFactoryOrFail(FACTORY_ADDRESS);
   let token0 = loadTokenOrFail(pair.token0);
   let token1 = loadTokenOrFail(pair.token1);
@@ -180,7 +180,7 @@ export function handleSync(event: Sync): void {
 }
 
 export function handleSwap(event: Swap): void {
-  let pair = loadPairOrFail(event.address);
+  let pair = loadPairOrFail(event.address.toHexString());
 
   let token0 = loadTokenOrFail(pair.token0);
   let token1 = loadTokenOrFail(pair.token1);
@@ -271,9 +271,9 @@ export function handleSwap(event: Swap): void {
   token1.save();
   uniswap.save();
 
-  let transaction = Transaction.load(event.transaction.hash);
+  let transaction = Transaction.load(event.transaction.hash.toHexString());
   if (transaction === null) {
-    transaction = new Transaction(event.transaction.hash);
+    transaction = new Transaction(event.transaction.hash.toHexString());
     transaction.blockNumber = event.block.number;
     transaction.timestamp = event.block.timestamp;
     transaction.multiLegSwapInProgress = false;
@@ -281,7 +281,12 @@ export function handleSwap(event: Swap): void {
     transaction.multiswapBeneficiary = null;
   }
   let swaps = transaction.swaps;
-  let swap = new SwapEvent(event.transaction.hash.concatI32(swaps.length));
+  let swap = new SwapEvent(
+    event.transaction.hash
+      .toHexString()
+      .concat('-')
+      .concat(swaps.length.toString())
+  );
 
   // update swap event
   swap.transaction = transaction.id;
@@ -331,7 +336,7 @@ export function handleSwap(event: Swap): void {
     sender != fromAddress &&
     fromAddress != toAddress
   ) {
-    let toPair = Pair.load(Bytes.fromHexString(toAddress));
+    let toPair = Pair.load(toAddress);
     if (toPair) {
       nextHopIsPair = true;
     }
@@ -340,17 +345,20 @@ export function handleSwap(event: Swap): void {
   if (!transaction.multiLegSwapInProgress) {
     // calc cost basis of origin txn
     log.info('Recognizing token sale for tx {} pair {} fromAddress: {}', [
-      transaction.id.toHexString(),
-      pair.id.toHexString(),
+      transaction.id,
+      pair.id,
       fromAddress,
     ]);
     let debitor = getSwapCreditor(sender, fromAddress, event.transaction);
-    let isEOA = debitor.toHexString() == fromAddress ? true : false;
+    let isEOA = debitor == fromAddress ? true : false;
 
     // Under some conditions, amount0In AND amount1In will both be non-zero.
     // probably caused by morons sending their tokens to the pair and forgetting to call swap.
     // MEV opportunity? lol
-    if (amount0Out == BigDecimal.zero()) {
+
+    // also note how there can be 2 values populated for amountOut. This only happens for smart contracts trying to be clever about gas use, so we lazily assume the lesser of the two tokens being received is the token being sold.
+
+    if (amount0Out.lt(amount1Out)) {
       // token0 is the token being sold
       let cb = recognizeTokenSale(
         pair.token0,
@@ -361,24 +369,22 @@ export function handleSwap(event: Swap): void {
       );
       if (cb) {
         swap.costBasis = cb.id;
+        cb.swapCount = cb.swapCount.plus(BigInt.fromI32(1));
+        cb.save();
       }
     } else {
-      if (amount1Out == BigDecimal.zero()) {
-        // token1 is the token being solds
-        let cb = recognizeTokenSale(
-          pair.token1,
-          amount1In,
-          swap.amountUSD,
-          debitor,
-          isEOA
-        );
-        if (cb) {
-          swap.costBasis = cb.id;
-        }
-      } else {
-        log.critical('this transaction has 2 populated amountOuts {}', [
-          transaction.id.toHexString(),
-        ]);
+      // token1 is the token being solds
+      let cb = recognizeTokenSale(
+        pair.token1,
+        amount1In,
+        swap.amountUSD,
+        debitor,
+        isEOA
+      );
+      if (cb) {
+        swap.costBasis = cb.id;
+        cb.swapCount = cb.swapCount.plus(BigInt.fromI32(1));
+        cb.save();
       }
     }
   }
@@ -386,25 +392,24 @@ export function handleSwap(event: Swap): void {
   if (nextHopIsPair) {
     swap.accounted = false;
     transaction.multiLegSwapInProgress = true;
-    log.info('Starting multiswap txn for tx {}', [
-      transaction.id.toHexString(),
-    ]);
+    log.info('Starting multiswap txn for tx {}', [transaction.id]);
   } else {
     swap.accounted = true;
     transaction.multiLegSwapInProgress = false;
     //let isEOA = toAddress == fromAddress ? true : false;
+
     recognizeTokenPurchase(
       pair.token0,
       amount0Out,
       swap.amountUSD,
-      Bytes.fromHexString(toAddress),
+      toAddress,
       false
     );
     recognizeTokenPurchase(
       pair.token1,
       amount1Out,
       swap.amountUSD,
-      Bytes.fromHexString(toAddress),
+      toAddress,
       false
     );
 

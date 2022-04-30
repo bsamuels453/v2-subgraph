@@ -44,8 +44,8 @@ export let UNTRACKED_PAIRS: string[] = [
 ];
 
 export function getOrCreateTokenCostBasis(
-  userAddress: Bytes,
-  tokenAddress: Bytes,
+  userAddress: string,
+  tokenAddress: string,
   smartContractRuledOut: boolean
 ): TokenCostBasis {
   let id = userAddress.concat(tokenAddress);
@@ -66,7 +66,7 @@ export function getOrCreateTokenCostBasis(
     let user = getOrCreateUser(userAddress);
 
     costBasis = new TokenCostBasis(id);
-    costBasis.user = userAddress;
+    costBasis.user = user.id;
     costBasis.token = tokenAddress;
     costBasis.usdCostBasis = BigDecimal.zero();
     costBasis.outstandingTokens = BigDecimal.zero();
@@ -76,48 +76,51 @@ export function getOrCreateTokenCostBasis(
     costBasis.usdTotalNetProceeds = BigDecimal.zero();
     costBasis.unrecognizableTokens = BigDecimal.zero();
     costBasis.smartContractRuledOut = smartContractRuledOut;
+    costBasis.swapCount = BigInt.zero();
     costBasis.save();
+
+    let test = TokenCostBasis.load(id);
+
+    if (test!.user === null) {
+      log.critical('user was null', []);
+    }
     return costBasis;
   }
 }
 
-export function loadTokenOrFail(address: Bytes): Token {
+export function loadTokenOrFail(address: string): Token {
   let token = Token.load(address);
   if (!token) {
-    log.critical('No token entity populated for address  {}', [
-      address.toHexString(),
-    ]);
+    log.critical('No token entity populated for address  {}', [address]);
     return token!;
   } else {
     return token;
   }
 }
 
-export function loadTransactionOrFail(hash: Bytes): Transaction {
+export function loadTransactionOrFail(hash: string): Transaction {
   let txn = Transaction.load(hash);
   if (!txn) {
-    log.critical('No transaction entity for hash {}', [hash.toHexString()]);
+    log.critical('No transaction entity for hash {}', [hash]);
     return txn!;
   } else {
     return txn;
   }
 }
 
-export function loadPairOrFail(address: Bytes): Pair {
+export function loadPairOrFail(address: string): Pair {
   let pair = Pair.load(address);
   if (!pair) {
-    log.critical('No pair entity populated for address {}', [
-      address.toHexString(),
-    ]);
+    log.critical('No pair entity populated for address {}', [address]);
     return pair!;
   } else {
     return pair;
   }
 }
 
-export function getPairLookupId(tokenA: Bytes, tokenB: Bytes): Bytes {
-  let tokenAValue = BigInt.fromUnsignedBytes(tokenA);
-  let tokenBValue = BigInt.fromUnsignedBytes(tokenB);
+export function getPairLookupId(tokenA: string, tokenB: string): string {
+  let tokenAValue = BigInt.fromUnsignedBytes(Bytes.fromHexString(tokenA));
+  let tokenBValue = BigInt.fromUnsignedBytes(Bytes.fromHexString(tokenB));
 
   if (tokenAValue.lt(tokenBValue)) {
     return tokenA.concat(tokenB);
@@ -126,7 +129,7 @@ export function getPairLookupId(tokenA: Bytes, tokenB: Bytes): Bytes {
   }
 }
 
-export function loadPairIfExists(tokenA: Bytes, tokenB: Bytes): Pair | null {
+export function loadPairIfExists(tokenA: string, tokenB: string): Pair | null {
   let id = getPairLookupId(tokenA, tokenB);
   let lookup = PairLookup.load(id);
   if (!lookup) {
@@ -171,7 +174,7 @@ export function getSwapCreditor(
   swapSender: string,
   swapFrom: string,
   transaction: ethereum.Transaction
-): Bytes {
+): string {
   // if sender is the router && txn.to == router, the debitor is the fromAddress
   // if sender is the router && txn.to != router, no idea. probably txn.to.
   // otherwise, creditor is sender.
@@ -183,20 +186,20 @@ export function getSwapCreditor(
 
   if (isRouter(swapSender)) {
     if (isRouter(txnTo)) {
-      return Bytes.fromHexString(swapFrom);
+      return swapFrom;
     } else {
-      return Bytes.fromHexString(txnTo);
+      return txnTo;
     }
   } else {
-    return Bytes.fromHexString(swapSender);
+    return swapSender;
   }
 }
 
 export function recognizeTokenPurchase(
-  tokenId: Bytes,
+  tokenId: string,
   tokensPurchased: BigDecimal,
   txValueUsd: BigDecimal,
-  debitorAddress: Bytes,
+  debitorAddress: string,
   isEOA: boolean
 ): void {
   if (tokensPurchased.equals(BigDecimal.zero())) {
@@ -223,10 +226,10 @@ export function recognizeTokenPurchase(
 }
 
 export function recognizeTokenSale(
-  tokenId: Bytes,
+  tokenId: string,
   tokensSold: BigDecimal,
   txnValueUsd: BigDecimal,
-  creditorAddress: Bytes,
+  creditorAddress: string,
   isEOA: boolean
 ): TokenCostBasis | null {
   if (tokensSold.equals(BigDecimal.zero())) {
@@ -395,7 +398,7 @@ export function fetchTokenDecimals(tokenAddress: Address): BigInt {
   return BigInt.fromI32(decimalValue as i32);
 }
 
-export function getOrCreateUser(address: Bytes): User {
+export function getOrCreateUser(address: string): User {
   let user = User.load(address);
   if (user === null) {
     user = new User(address);

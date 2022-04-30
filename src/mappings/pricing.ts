@@ -25,9 +25,9 @@ const USDT_WETH_PAIR = '0x0d4a11d5eeaac28ec3f61d100daf4d40471f1852'; // created 
 
 export function getEthPriceInUSD(): BigDecimal {
   // fetch eth prices for each stablecoin
-  let daiPair = Pair.load(Bytes.fromHexString(DAI_WETH_PAIR)); // dai is token0
-  let usdcPair = Pair.load(Bytes.fromHexString(USDC_WETH_PAIR)); // usdc is token0
-  let usdtPair = Pair.load(Bytes.fromHexString(USDT_WETH_PAIR)); // usdt is token1
+  let daiPair = Pair.load(DAI_WETH_PAIR); // dai is token0
+  let usdcPair = Pair.load(USDC_WETH_PAIR); // usdc is token0
+  let usdtPair = Pair.load(USDT_WETH_PAIR); // usdt is token1
 
   // all 3 have been created
   if (daiPair !== null && usdcPair !== null && usdtPair !== null) {
@@ -92,12 +92,12 @@ let MINIMUM_LIQUIDITY_THRESHOLD_ETH = BigDecimal.fromString('2');
  * @todo update to be derived ETH (add stablecoin estimates)
  **/
 export function findEthPerToken(token: Token): BigDecimal {
-  if (token.id == Bytes.fromHexString(WETH_ADDRESS)) {
+  if (token.id == WETH_ADDRESS) {
     return ONE_BD;
   }
   // loop through whitelist and check if paired with any
   for (let i = 0; i < WHITELIST.length; ++i) {
-    let pair = loadPairIfExists(token.id, Bytes.fromHexString(WHITELIST[i]));
+    let pair = loadPairIfExists(token.id, WHITELIST[i]);
     if (pair) {
       if (
         pair.token0 == token.id &&
@@ -137,12 +137,12 @@ export function getTrackedVolumeUSD(
   let price1 = token1.derivedETH.times(bundle.ethPrice);
 
   // dont count tracked volume on these pairs - usually rebass tokens
-  if (UNTRACKED_PAIRS.includes(pair.id.toHexString())) {
+  if (UNTRACKED_PAIRS.includes(pair.id)) {
     return ZERO_BD;
   }
 
-  let token0Str = token0.id.toHexString();
-  let token1Str = token1.id.toHexString();
+  let token0Str = token0.id;
+  let token1Str = token1.id;
 
   // if less than 5 LPs, require high minimum reserve amount amount or return 0
   if (pair.liquidityProviderCount.lt(BigInt.fromI32(5))) {
@@ -212,8 +212,8 @@ export function getTrackedLiquidityUSD(
   let price0 = token0.derivedETH.times(bundle.ethPrice);
   let price1 = token1.derivedETH.times(bundle.ethPrice);
 
-  let token0Str = token0.id.toHexString();
-  let token1Str = token1.id.toHexString();
+  let token0Str = token0.id;
+  let token1Str = token1.id;
 
   // both are whitelist tokens, take average of both amounts
   if (WHITELIST.includes(token0Str) && WHITELIST.includes(token1Str)) {

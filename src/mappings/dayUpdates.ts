@@ -32,9 +32,9 @@ export function updateUniswapDayData(event: ethereum.Event): UniswapDayData {
   let dayID = timestamp / 86400;
   let dayStartTimestamp = dayID * 86400;
   let dayIdBytes = Bytes.fromI64(dayID);
-  let uniswapDayData = UniswapDayData.load(Bytes.fromByteArray(dayIdBytes));
+  let uniswapDayData = UniswapDayData.load(dayIdBytes.toHexString());
   if (uniswapDayData === null) {
-    uniswapDayData = new UniswapDayData(Bytes.fromByteArray(dayIdBytes));
+    uniswapDayData = new UniswapDayData(dayIdBytes.toHexString());
     uniswapDayData.date = dayStartTimestamp;
     uniswapDayData.dailyVolumeUSD = ZERO_BD;
     uniswapDayData.dailyVolumeETH = ZERO_BD;
@@ -57,10 +57,10 @@ export function updatePairDayData(event: ethereum.Event): PairDayData {
   let dayStartTimestamp = dayID * 86400;
 
   let dayPairID = event.address.concatI32(dayID);
-  let pair = loadPairOrFail(event.address);
-  let pairDayData = PairDayData.load(dayPairID);
+  let pair = loadPairOrFail(event.address.toHexString());
+  let pairDayData = PairDayData.load(dayPairID.toHexString());
   if (pairDayData === null) {
-    pairDayData = new PairDayData(dayPairID);
+    pairDayData = new PairDayData(dayPairID.toHexString());
     pairDayData.date = dayStartTimestamp;
     pairDayData.token0 = pair.token0;
     pairDayData.token1 = pair.token1;
@@ -86,12 +86,12 @@ export function updatePairHourData(event: ethereum.Event): PairHourData {
   let hourIndex = timestamp / 3600; // get unique hour within unix history
   let hourStartUnix = hourIndex * 3600; // want the rounded effect
   let hourPairID = event.address.concatI32(hourIndex);
-  let pair = loadPairOrFail(event.address);
-  let pairHourData = PairHourData.load(hourPairID);
+  let pair = loadPairOrFail(event.address.toHexString());
+  let pairHourData = PairHourData.load(hourPairID.toHexString());
   if (pairHourData === null) {
-    pairHourData = new PairHourData(hourPairID);
+    pairHourData = new PairHourData(hourPairID.toHexString());
     pairHourData.hourStartUnix = hourStartUnix;
-    pairHourData.pair = event.address;
+    pairHourData.pair = event.address.toHexString();
     pairHourData.hourlyVolumeToken0 = ZERO_BD;
     pairHourData.hourlyVolumeToken1 = ZERO_BD;
     pairHourData.hourlyVolumeUSD = ZERO_BD;
@@ -116,7 +116,7 @@ export function updateTokenDayData(
   let timestamp = event.block.timestamp.toI32();
   let dayID = timestamp / 86400;
   let dayStartTimestamp = dayID * 86400;
-  let tokenDayID = token.id.concatI32(dayID);
+  let tokenDayID = token.id.concat(dayID.toString());
 
   let tokenDayData = TokenDayData.load(tokenDayID);
   if (tokenDayData === null) {
